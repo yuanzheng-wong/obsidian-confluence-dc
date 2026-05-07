@@ -1,0 +1,9 @@
+{
+  "id": "obsidian-confluence-dc",
+  "name": "Confluence DC Sync",
+  "version": "0.1.0",
+  "minAppVersion": "1.0.0",
+  "description": "Push/pull Obsidian notes to Confluence Data Center via REST API",
+  "author": "yuanzheng.wong",
+  "isDesktopOnly": true
+}

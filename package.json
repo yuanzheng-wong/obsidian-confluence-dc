@@ -1,0 +1,16 @@
+{
+  "name": "obsidian-confluence-dc",
+  "version": "0.1.0",
+  "description": "Push/pull Obsidian notes to Confluence Data Center",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "dev": "node esbuild.config.mjs --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.20.0",
+    "obsidian": "latest",
+    "typescript": "^5.0.0"
+  }
+}
