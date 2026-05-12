@@ -2,6 +2,7 @@ import { App, Modal, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type ConfluencePlugin from '../main';
 import { ConfluenceClient } from '../api/client';
 import { unlockBw, readSession } from '../api/credentials';
+import { encryptSecret, decryptSecret } from '../api/safeStorage';
 import { MappingModal } from './MappingModal';
 import { FileMapping } from '../settings';
 
@@ -104,24 +105,24 @@ export class ConfluenceSettingTab extends PluginSettingTab {
 
       new Setting(containerEl)
         .setName('Password')
-        .setDesc('Stored in Obsidian plugin data — keep your vault private.')
+        .setDesc('Encrypted with the OS keychain via Electron safeStorage.')
         .addText((text) => {
           text.inputEl.type = 'password';
           text
-            .setValue(this.plugin.settings.password)
+            .setValue(decryptSecret(this.plugin.settings.password))
             .onChange(async (v) => {
-              this.plugin.settings.password = v;
+              this.plugin.settings.password = encryptSecret(v);
               await this.plugin.saveSettings();
             });
         });
     } else {
       new Setting(containerEl)
         .setName('Personal Access Token')
-        .setDesc('Stored in Obsidian plugin data — keep your vault private.')
+        .setDesc('Encrypted with the OS keychain via Electron safeStorage.')
         .addText((text) => {
           text.inputEl.type = 'password';
-          text.setValue(this.plugin.settings.pat).onChange(async (v) => {
-            this.plugin.settings.pat = v;
+          text.setValue(decryptSecret(this.plugin.settings.pat)).onChange(async (v) => {
+            this.plugin.settings.pat = encryptSecret(v);
             await this.plugin.saveSettings();
           });
         });

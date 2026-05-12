@@ -2,6 +2,7 @@ import { execSync } from 'child_process';
 import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { ConfluenceSettings } from '../settings';
+import { decryptSecret } from './safeStorage';
 
 let SESSION_FILE = '';
 
@@ -128,6 +129,6 @@ export function resolveAuthHeader(settings: ConfluenceSettings): string {
     }
   }
 
-  if (settings.authType === 'pat') return `Bearer ${settings.pat}`;
-  return `Basic ${btoa(`${settings.username}:${settings.password}`)}`;
+  if (settings.authType === 'pat') return `Bearer ${decryptSecret(settings.pat)}`;
+  return `Basic ${btoa(`${settings.username}:${decryptSecret(settings.password)}`)}`;
 }
