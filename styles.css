@@ -129,6 +129,27 @@
   color: var(--text-muted);
 }
 
+/* Error box */
+.cf-error-box {
+  display: none;
+}
+.cf-error-box-visible {
+  display: block;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--color-red, #e05252);
+  background: var(--background-primary-alt);
+  color: var(--text-normal);
+  font-size: 0.82em;
+  font-family: var(--font-monospace);
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
 /* Status colours */
 .cf-status-synced   { color: var(--color-green); }
 .cf-status-ahead    { color: var(--color-blue); }

@@ -163,8 +163,8 @@ export default class ConfluencePlugin extends Plugin {
       progress.finish(`Pushed → ${page.title}`);
       await this.writeFrontmatterPageId(filePath, page.id);
     } catch (e) {
-      progress.fail(`Push failed: ${(e as Error).message}`);
       if (e instanceof ConflictError) {
+        progress.fail(`Push failed: conflict`);
         const resolution = await new ConflictModal(
           this.app,
           e.filePath,
@@ -197,6 +197,7 @@ export default class ConfluencePlugin extends Plugin {
           new Notice(`Pulled (remote wins): ${filePath}`);
         }
       } else {
+        progress.fail(`Push failed: ${(e as Error).message}`);
         console.error('[confluence-dc] push failed', e);
         throw e;
       }
@@ -250,7 +251,6 @@ export default class ConfluencePlugin extends Plugin {
           new Notice(`Pushed (local wins): ${filePath}`);
         }
       } else {
-        new Notice(`Pull failed: ${(e as Error).message}`);
         throw e;
       }
     }

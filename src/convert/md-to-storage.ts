@@ -119,7 +119,15 @@ export function mdToStorage(markdown: string, imageMap: Record<string, string> =
       i++;
     }
     if (paraLines.length > 0) {
-      blocks.push(`<p>${inline(paraLines.join(' '))}</p>`);
+      const joined = paraLines
+        .map((l, idx) => {
+          if (idx === paraLines.length - 1) return l;
+          if (l.endsWith('\\')) return l.slice(0, -1) + '<br/>';
+          if (l.endsWith('  ')) return l.trimEnd() + '<br/>';
+          return l + ' ';
+        })
+        .join('');
+      blocks.push(`<p>${inline(joined)}</p>`);
     }
   }
 
@@ -130,7 +138,7 @@ function codeBlock(lang: string, code: string): string {
   // Escape any CDATA-ending sequence inside the code
   const safe = code.replace(/]]>/g, ']]]]><![CDATA[>');
   const langParam = lang
-    ? `<ac:parameter ac:name="language">${lang}</ac:parameter>`
+    ? `<ac:parameter ac:name="language">${escXml(lang)}</ac:parameter>`
     : '';
   return (
     `<ac:structured-macro ac:name="code">` +
@@ -176,68 +184,77 @@ function list(lines: string[], ordered: boolean, inline: (s: string) => string):
   return html;
 }
 
+/** Escape characters that are invalid in XHTML text nodes. */
+function escXml(s: string): string {
+  return s
+    .replace(/&(?![a-zA-Z#]\w{0,10};)/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/** Escape for use inside an XML attribute value (double-quoted). */
+function escAttr(s: string): string {
+  return escXml(s).replace(/"/g, '&quot;');
+}
+
 function makeInline(imageMap: Record<string, string>) {
   return function inline(text: string): string {
-    // Stash images as null-byte placeholders so text-formatting regexes
-    // can't corrupt filenames (e.g. _italic_ matching inside ri:filename="...").
     const stash: string[] = [];
-    const stashImg = (xml: string) => {
+    const stashXml = (xml: string) => {
       const idx = stash.push(xml) - 1;
       return `\x00${idx}\x00`;
     };
 
-    // Wikilink images: ![[image.png]] or ![[image.png|alt]]
+    // 1. Stash images — valid XML, must not be escaped below.
     text = text.replace(/!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g, (_, ref) => {
       const filename = imageMap[ref.trim()];
-      return stashImg(filename
-        ? `<ac:image><ri:attachment ri:filename="${filename}"/></ac:image>`
+      return stashXml(filename
+        ? `<ac:image><ri:attachment ri:filename="${escAttr(filename)}"/></ac:image>`
         : '');
     });
-
-    // Standard images: ![alt](src)
     text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, _alt, src) => {
       if (src.startsWith('http://') || src.startsWith('https://')) {
-        return stashImg(`<ac:image><ri:url ri:value="${src}"/></ac:image>`);
+        return stashXml(`<ac:image><ri:url ri:value="${escAttr(src)}"/></ac:image>`);
       }
       const filename = imageMap[src.trim()];
-      return stashImg(filename
-        ? `<ac:image><ri:attachment ri:filename="${filename}"/></ac:image>`
+      return stashXml(filename
+        ? `<ac:image><ri:attachment ri:filename="${escAttr(filename)}"/></ac:image>`
         : '');
     });
 
-    // Wikilinks (non-image): [[target|alias]] or [[target]]
+    // 2. Stash inline code with escaped content so < > inside backticks
+    //    don't become unmatched XHTML tags.
+    text = text.replace(/`([^`]+)`/g, (_, code) =>
+      stashXml(`<code>${escXml(code)}</code>`)
+    );
+
+    // 3. Escape raw text — stash placeholders (\x00N\x00) contain no < > &
+    //    so they pass through untouched.
+    text = escXml(text);
+
+    // 4. Wikilinks (non-image): [[target|alias]] or [[target]]
+    //    Targets/aliases are already escaped from step 3.
     text = text.replace(
       /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
       (_, target, alias) => alias ?? target
     );
 
-    // Bold+italic
+    // 5. Inline formatting — patterns don't conflict with XML entities.
     text = text.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
-
-    // Bold
     text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     text = text.replace(/__(.+?)__/g, '<strong>$1</strong>');
-
-    // Italic
     text = text.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
     text = text.replace(/(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/g, '<em>$1</em>');
-
-    // Strikethrough
     text = text.replace(/~~(.+?)~~/g, '<del>$1</del>');
-
-    // Highlight
     text = text.replace(/==(.+?)==/g, '<mark>$1</mark>');
 
-    // Inline code (before links to avoid clashes)
-    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-    // Links (not images)
+    // 6. Links — URL is already &amp;-escaped from step 3, correct for href.
     text = text.replace(
       /(?<!!)(\[([^\]]+)\])\(([^)]+)\)/g,
-      '<a href="$3">$2</a>'
+      (_, _full, label, href) => `<a href="${href}">${label}</a>`
     );
 
-    // Restore stashed images
+    // 7. Restore stashed XML.
     text = text.replace(/\x00(\d+)\x00/g, (_, idx) => stash[Number(idx)]);
 
     return text;

@@ -164,8 +164,9 @@ export class ConfluenceSidebarView extends ItemView {
     const canSync = !!(fm.spaceKey && (fm.parentId || fm.pageId || record?.pageId));
     if (canSync) {
       const actions = root.createDiv({ cls: 'cf-actions' });
-      this.addActionButton(actions, 'Push', 'mod-cta', () => this.plugin.pushFile(file.path));
-      this.addActionButton(actions, 'Pull', '', () => this.plugin.pullFile(file.path));
+      const errorBox = root.createDiv({ cls: 'cf-error-box' });
+      this.addActionButton(actions, 'Push', 'mod-cta', () => this.plugin.pushFile(file.path), errorBox);
+      this.addActionButton(actions, 'Pull', '', () => this.plugin.pullFile(file.path), errorBox);
     }
   }
 
@@ -313,13 +314,15 @@ export class ConfluenceSidebarView extends ItemView {
     container: HTMLElement,
     label: string,
     cls: string,
-    action: () => Promise<void>
+    action: () => Promise<void>,
+    errorEl?: HTMLElement
   ): void {
     const btn = container.createEl('button', { text: label, cls: cls || undefined });
     btn.addEventListener('click', async () => {
       btn.disabled = true;
       btn.setText(`${label}…`);
       btn.addClass('cf-btn-loading');
+      if (errorEl) { errorEl.empty(); errorEl.removeClass('cf-error-box-visible'); }
       try {
         await action();
         btn.setText('✓ Done');
@@ -328,7 +331,7 @@ export class ConfluenceSidebarView extends ItemView {
           btn.removeClass('cf-btn-done');
           this.refresh();
         }, 1500);
-      } catch {
+      } catch (e) {
         btn.setText('✗ Failed');
         btn.addClass('cf-btn-error');
         setTimeout(() => {
@@ -336,6 +339,14 @@ export class ConfluenceSidebarView extends ItemView {
           btn.setText(label);
           btn.removeClass('cf-btn-loading', 'cf-btn-error');
         }, 2000);
+        if (errorEl) {
+          errorEl.setText((e as Error).message ?? String(e));
+          errorEl.addClass('cf-error-box-visible');
+          setTimeout(() => {
+            errorEl.empty();
+            errorEl.removeClass('cf-error-box-visible');
+          }, 60_000);
+        }
       }
     });
   }
