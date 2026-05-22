@@ -1,0 +1,138 @@
+/* Tab bar */
+.cf-tab-bar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 6px;
+}
+.cf-tab {
+  background: none;
+  border: none;
+  padding: 4px 12px;
+  cursor: pointer;
+  color: var(--text-muted);
+  border-radius: 4px;
+}
+.cf-tab-active {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+/* File tab */
+.cf-filename {
+  font-weight: 600;
+  margin-bottom: 10px;
+  font-size: 0.95em;
+  color: var(--text-normal);
+}
+.cf-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.cf-field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cf-label {
+  font-size: 0.78em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.cf-input {
+  width: 100%;
+  font-size: 0.88em;
+}
+.cf-value-link, .cf-value-muted {
+  font-size: 0.85em;
+  word-break: break-all;
+}
+.cf-value-muted {
+  color: var(--text-muted);
+}
+.cf-status {
+  font-size: 0.82em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+/* Actions */
+.cf-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.cf-actions button {
+  padding: 6px 16px;
+}
+
+/* Vault tab */
+.cf-bulk {
+  margin-bottom: 8px;
+}
+.cf-check-row {
+  margin-bottom: 10px;
+}
+.cf-check-btn {
+  width: 100%;
+  padding: 5px;
+}
+.cf-empty {
+  color: var(--text-muted);
+  font-size: 0.88em;
+}
+
+/* Vault file list */
+.cf-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cf-vault-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 4px;
+  border-radius: 4px;
+}
+.cf-vault-row:hover {
+  background: var(--background-modifier-hover);
+}
+.cf-vault-icon {
+  font-size: 0.85em;
+  min-width: 14px;
+  text-align: center;
+  margin-top: 2px;
+}
+.cf-vault-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.cf-vault-name {
+  font-size: 0.88em;
+  color: var(--text-normal);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cf-vault-name:hover {
+  color: var(--text-accent);
+}
+.cf-vault-meta {
+  font-size: 0.76em;
+  color: var(--text-muted);
+}
+
+/* Status colours */
+.cf-status-synced   { color: var(--color-green); }
+.cf-status-ahead    { color: var(--color-blue); }
+.cf-status-behind   { color: var(--color-orange); }
+.cf-status-conflict { color: var(--color-red); }
+.cf-status-new      { color: var(--text-muted); }
+.cf-status-unknown  { color: var(--text-faint); }

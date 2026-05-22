@@ -5,6 +5,7 @@ import { mdToStorage } from '../convert/md-to-storage';
 import { FileMapping } from '../settings';
 import { FileSyncRecord, StateManager, hashContent } from './state';
 import { findLocalImages, buildImageMap, pushAttachments } from './attachments';
+import { stripFrontmatter } from './frontmatter';
 
 export class ConflictError extends Error {
   constructor(
@@ -33,15 +34,16 @@ export async function pushFile(
   if (!(file instanceof TFile)) throw new Error(`Not a file: ${filePath}`);
 
   const content = await vault.read(file);
-  const localHash = await hashContent(content);
+  const body = stripFrontmatter(content);
+  const localHash = await hashContent(body);
   const title = pageTitle(file, mapping);
   const record = stateManager.get(filePath);
 
   // Resolve local images before converting
   await onProgress?.('Converting markdown…');
-  const images = findLocalImages(content, vault, filePath);
+  const images = findLocalImages(body, vault, filePath);
   const imageMap = buildImageMap(images);
-  const storageBody = mdToStorage(content, imageMap);
+  const storageBody = mdToStorage(body, imageMap);
 
   if (record) {
     await onProgress?.('Checking remote page…');

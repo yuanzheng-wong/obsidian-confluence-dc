@@ -7,11 +7,17 @@ import { StateManager } from './sync/state';
 import { pushFile, ConflictError } from './sync/push';
 import { pullFile } from './sync/pull';
 import { resolveFiles } from './sync/status';
+import {
+  readConfluenceFrontmatter,
+  writeConfluenceFrontmatter,
+  frontmatterToMapping,
+} from './sync/frontmatter';
 import { ConfluenceSettingTab } from './ui/SettingsTab';
 import { StatusModal } from './ui/StatusModal';
 import { MappingModal } from './ui/MappingModal';
 import { ConflictModal } from './ui/ConflictModal';
 import { ProgressNotice, yieldToUI } from './ui/ProgressNotice';
+import { ConfluenceSidebarView, VIEW_TYPE_CONFLUENCE } from './ui/SidebarView';
 
 export default class ConfluencePlugin extends Plugin {
   settings!: ConfluenceSettings;
@@ -27,8 +33,17 @@ export default class ConfluencePlugin extends Plugin {
 
     this.addSettingTab(new ConfluenceSettingTab(this.app, this));
 
-    this.addRibbonIcon('cloud', 'Confluence sync status', () => {
-      this.openStatusModal();
+    this.registerView(
+      VIEW_TYPE_CONFLUENCE,
+      (leaf) => new ConfluenceSidebarView(leaf, this)
+    );
+
+    this.addRibbonIcon('cloud', 'Confluence', () => {
+      this.activateSidebarView();
+    });
+
+    this.app.workspace.onLayoutReady(() => {
+      this.activateSidebarView();
     });
 
     this.addCommand({
@@ -95,6 +110,12 @@ export default class ConfluencePlugin extends Plugin {
       },
     });
 
+    this.addCommand({
+      id: 'import-frontmatter-from-state',
+      name: 'Import Confluence config from sync state',
+      callback: () => this.importFrontmatterFromState(),
+    });
+
     // Track renames so sync state stays accurate
     this.registerEvent(
       this.app.vault.on('rename', (abstract, oldPath) => {
@@ -103,11 +124,17 @@ export default class ConfluencePlugin extends Plugin {
     );
   }
 
-  private client(): ConfluenceClient {
+  client(): ConfluenceClient {
     return new ConfluenceClient(this.settings);
   }
 
   private findMapping(filePath: string) {
+    const file = this.app.vault.getAbstractFileByPath(filePath);
+    if (file instanceof TFile) {
+      const fm = readConfluenceFrontmatter(this.app, file);
+      const fmMapping = frontmatterToMapping(fm, filePath);
+      if (fmMapping) return fmMapping;
+    }
     return this.settings.mappings.find(
       (m) =>
         filePath === m.localPath || filePath.startsWith(m.localPath + '/')
@@ -118,7 +145,7 @@ export default class ConfluencePlugin extends Plugin {
     const mapping = this.findMapping(filePath);
     if (!mapping) {
       new Notice(`No mapping for ${filePath}. Use "Map current file" first.`);
-      return;
+      throw new Error('No mapping');
     }
     const progress = new ProgressNotice('Pushing…');
     await yieldToUI(); // let the notice paint before any work starts
@@ -134,6 +161,7 @@ export default class ConfluencePlugin extends Plugin {
         onProgress
       );
       progress.finish(`Pushed → ${page.title}`);
+      await this.writeFrontmatterPageId(filePath, page.id);
     } catch (e) {
       progress.fail(`Push failed: ${(e as Error).message}`);
       if (e instanceof ConflictError) {
@@ -170,6 +198,7 @@ export default class ConfluencePlugin extends Plugin {
         }
       } else {
         console.error('[confluence-dc] push failed', e);
+        throw e;
       }
     }
   }
@@ -178,7 +207,7 @@ export default class ConfluencePlugin extends Plugin {
     const mapping = this.findMapping(filePath);
     if (!mapping) {
       new Notice(`No mapping for ${filePath}. Use "Map current file" first.`);
-      return;
+      throw new Error('No mapping');
     }
     try {
       await pullFile(
@@ -222,6 +251,7 @@ export default class ConfluencePlugin extends Plugin {
         }
       } else {
         new Notice(`Pull failed: ${(e as Error).message}`);
+        throw e;
       }
     }
   }
@@ -272,6 +302,45 @@ export default class ConfluencePlugin extends Plugin {
       }
     }
     new Notice(`Pull all: ${pulled} pulled, ${failed} failed/conflicted`);
+  }
+
+  async activateSidebarView(): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_CONFLUENCE);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: VIEW_TYPE_CONFLUENCE, active: true });
+      this.app.workspace.revealLeaf(leaf);
+    }
+  }
+
+  private async writeFrontmatterPageId(filePath: string, pageId: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(filePath);
+    if (!(file instanceof TFile)) return;
+    const fm = readConfluenceFrontmatter(this.app, file);
+    if (fm.spaceKey && fm.pageId !== pageId) {
+      await writeConfluenceFrontmatter(this.app, file, { pageId });
+    }
+  }
+
+  async importFrontmatterFromState(): Promise<void> {
+    const records = this.stateManager.all();
+    let imported = 0;
+    for (const [filePath, record] of Object.entries(records)) {
+      const file = this.app.vault.getAbstractFileByPath(filePath);
+      if (!(file instanceof TFile)) continue;
+      const fm = readConfluenceFrontmatter(this.app, file);
+      if (fm.spaceKey) continue; // already configured
+      await writeConfluenceFrontmatter(this.app, file, {
+        spaceKey: record.spaceKey,
+        pageId: record.pageId,
+      });
+      imported++;
+    }
+    new Notice(imported > 0 ? `Imported config for ${imported} file(s)` : 'No new files to import');
   }
 
   private openStatusModal(): void {

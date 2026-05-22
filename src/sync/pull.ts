@@ -5,6 +5,7 @@ import { FileMapping, ConfluenceSettings } from '../settings';
 import { FileSyncRecord, StateManager, hashContent } from './state';
 import { ConflictError } from './push';
 import { pullAttachments } from './attachments';
+import { extractFrontmatterBlock, stripFrontmatter } from './frontmatter';
 
 export async function pullFile(
   filePath: string,
@@ -25,7 +26,7 @@ export async function pullFile(
 
   const file = vault.getAbstractFileByPath(filePath);
   const localContent = file instanceof TFile ? await vault.read(file) : '';
-  const localHash = await hashContent(localContent);
+  const localHash = await hashContent(stripFrontmatter(localContent));
 
   const localChanged = localHash !== record.localHash;
   const remoteChanged = remoteHash !== record.remoteHash;
@@ -47,7 +48,9 @@ export async function pullFile(
     return;
   }
 
-  const mdContent = storageToMd(remotePage.body.storage.value);
+  const pulledBody = storageToMd(remotePage.body.storage.value);
+  const existingFm = extractFrontmatterBlock(localContent);
+  const mdContent = existingFm ? existingFm + pulledBody : pulledBody;
 
   if (file instanceof TFile) {
     await vault.modify(file, mdContent);
@@ -56,7 +59,7 @@ export async function pullFile(
     await vault.create(filePath, mdContent);
   }
 
-  const newLocalHash = await hashContent(mdContent);
+  const newLocalHash = await hashContent(pulledBody);
   await stateManager.set(filePath, {
     ...record,
     pageVersion: remotePage.version.number,
