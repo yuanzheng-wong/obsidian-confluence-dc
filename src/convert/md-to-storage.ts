@@ -44,17 +44,14 @@ export function mdToStorage(markdown: string, imageMap: Record<string, string> =
       continue;
     }
 
-    // Blockquote
+    // Callout / blockquote
     if (line.startsWith('>')) {
       const quoteLines: string[] = [];
       while (i < lines.length && lines[i].startsWith('>')) {
         quoteLines.push(lines[i].replace(/^>\s?/, ''));
         i++;
       }
-      const inner = mdToStorage(quoteLines.join('\n'), imageMap);
-      blocks.push(
-        `<ac:structured-macro ac:name="info"><ac:rich-text-body>${inner}</ac:rich-text-body></ac:structured-macro>`
-      );
+      blocks.push(blockquote(quoteLines, imageMap));
       continue;
     }
 
@@ -66,6 +63,17 @@ export function mdToStorage(markdown: string, imageMap: Record<string, string> =
         i++;
       }
       blocks.push(table(tableLines, inline));
+      continue;
+    }
+
+    // Task list
+    if (line.match(/^(\s*)[*+-] \[[ x]\] /i)) {
+      const taskLines: string[] = [];
+      while (i < lines.length && lines[i].match(/^(\s*)[*+-] \[[ x]\] /i)) {
+        taskLines.push(lines[i]);
+        i++;
+      }
+      blocks.push(taskList(taskLines, inline));
       continue;
     }
 
@@ -135,7 +143,6 @@ export function mdToStorage(markdown: string, imageMap: Record<string, string> =
 }
 
 function codeBlock(lang: string, code: string): string {
-  // Escape any CDATA-ending sequence inside the code
   const safe = code.replace(/]]>/g, ']]]]><![CDATA[>');
   const langParam = lang
     ? `<ac:parameter ac:name="language">${escXml(lang)}</ac:parameter>`
@@ -148,15 +155,68 @@ function codeBlock(lang: string, code: string): string {
   );
 }
 
+const CALLOUT_MACRO: Record<string, string> = {
+  note:      'note',
+  info:      'info',
+  tip:       'tip',
+  hint:      'tip',
+  important: 'info',
+  warning:   'warning',
+  caution:   'warning',
+  danger:    'warning',
+  error:     'warning',
+  success:   'tip',
+  check:     'tip',
+  question:  'info',
+  quote:     'info',
+  cite:      'info',
+  abstract:  'info',
+  summary:   'info',
+  todo:      'note',
+  failure:   'warning',
+  bug:       'warning',
+  example:   'note',
+};
+
+function blockquote(quoteLines: string[], imageMap: Record<string, string>): string {
+  // Obsidian callout: first line is [!TYPE] optional title
+  const calloutMatch = quoteLines[0]?.match(/^\[!(\w+)\][\s-]*(.*)/i);
+  if (calloutMatch) {
+    const type = calloutMatch[1].toLowerCase();
+    const title = calloutMatch[2].trim();
+    const macro = CALLOUT_MACRO[type] ?? 'info';
+    const bodyLines = quoteLines.slice(1);
+    const body = bodyLines.length
+      ? mdToStorage(bodyLines.join('\n'), imageMap)
+      : '';
+    const titleParam = title
+      ? `<ac:parameter ac:name="title">${escXml(title)}</ac:parameter>`
+      : '';
+    return (
+      `<ac:structured-macro ac:name="${macro}">` +
+      titleParam +
+      `<ac:rich-text-body>${body}</ac:rich-text-body>` +
+      `</ac:structured-macro>`
+    );
+  }
+
+  // Plain blockquote
+  const inner = mdToStorage(quoteLines.join('\n'), imageMap);
+  return (
+    `<ac:structured-macro ac:name="info">` +
+    `<ac:rich-text-body>${inner}</ac:rich-text-body>` +
+    `</ac:structured-macro>`
+  );
+}
+
 function table(lines: string[], inline: (s: string) => string): string {
-  // Filter out separator row
   const rows = lines.filter((l) => !l.match(/^\|?[\s|:-]+\|?\s*$/));
 
   let html = '<table><tbody>';
   rows.forEach((row, rowIdx) => {
     const cells = row
       .split('|')
-      .slice(1, -1) // strip leading/trailing empty from pipes
+      .slice(1, -1)
       .map((c) => c.trim());
     const tag = rowIdx === 0 ? 'th' : 'td';
     html += '<tr>';
@@ -169,19 +229,82 @@ function table(lines: string[], inline: (s: string) => string): string {
   return html;
 }
 
+function taskList(lines: string[], inline: (s: string) => string): string {
+  let html = '<ac:task-list>';
+  for (const line of lines) {
+    const m = line.match(/^(\s*)[*+-] \[([ x])\] (.*)$/i);
+    if (!m) continue;
+    const checked = m[2].toLowerCase() === 'x';
+    const status = checked ? 'complete' : 'incomplete';
+    html +=
+      `<ac:task>` +
+      `<ac:task-status>${status}</ac:task-status>` +
+      `<ac:task-body>${inline(m[3])}</ac:task-body>` +
+      `</ac:task>`;
+  }
+  html += '</ac:task-list>';
+  return html;
+}
+
+interface ListItem {
+  depth: number;
+  text: string;
+  ordered: boolean;
+}
+
 function list(lines: string[], ordered: boolean, inline: (s: string) => string): string {
-  const tag = ordered ? 'ol' : 'ul';
-  let html = `<${tag}>`;
+  const items: ListItem[] = [];
 
   for (const line of lines) {
-    const match = line.match(/^(\s*)(?:[*+-]|\d+[.)])\s+(.*)$/);
+    const unordered = line.match(/^(\s*)[*+-] (.*)$/);
+    const orderedMatch = line.match(/^(\s*)\d+[.)]\s+(.*)$/);
+    const match = unordered ?? orderedMatch;
     if (match) {
-      html += `<li><p>${inline(match[2])}</p></li>`;
+      const depth = Math.floor(match[1].length / 2);
+      items.push({ depth, text: match[2], ordered: !!orderedMatch });
+    }
+    // continuation lines (indented content) are appended to the last item
+    else if (items.length > 0) {
+      items[items.length - 1].text += ' ' + line.trim();
     }
   }
 
+  return renderListItems(items, 0, ordered, inline).html;
+}
+
+function renderListItems(
+  items: ListItem[],
+  start: number,
+  ordered: boolean,
+  inline: (s: string) => string
+): { html: string; next: number } {
+  const tag = ordered ? 'ol' : 'ul';
+  let html = `<${tag}>`;
+  let i = start;
+
+  while (i < items.length) {
+    const item = items[i];
+    if (item.depth < (start === 0 ? 0 : items[start - 1]?.depth ?? 0)) break;
+
+    html += `<li><p>${inline(item.text)}</p>`;
+
+    // Check if next item is deeper (nested list)
+    if (i + 1 < items.length && items[i + 1].depth > item.depth) {
+      const nested = renderListItems(items, i + 1, items[i + 1].ordered, inline);
+      html += nested.html;
+      i = nested.next;
+    } else {
+      i++;
+    }
+
+    html += '</li>';
+
+    // Stop if next item is shallower
+    if (i < items.length && items[i].depth < item.depth) break;
+  }
+
   html += `</${tag}>`;
-  return html;
+  return { html, next: i };
 }
 
 /** Escape characters that are invalid in XHTML text nodes. */
@@ -222,24 +345,26 @@ function makeInline(imageMap: Record<string, string>) {
         : '');
     });
 
-    // 2. Stash inline code with escaped content so < > inside backticks
-    //    don't become unmatched XHTML tags.
+    // 2. Stash embedded notes ![[note.md]] (no image extension) — render as plain text link.
+    text = text.replace(/!\[\[([^\]|]+\.md)(?:\|([^\]]*))?\]\]/g, (_, target, alias) =>
+      stashXml(`<em>${escXml(alias ?? target.replace(/\.md$/, ''))}</em>`)
+    );
+
+    // 3. Stash inline code with escaped content.
     text = text.replace(/`([^`]+)`/g, (_, code) =>
       stashXml(`<code>${escXml(code)}</code>`)
     );
 
-    // 3. Escape raw text — stash placeholders (\x00N\x00) contain no < > &
-    //    so they pass through untouched.
+    // 4. Escape raw text — stash placeholders contain no < > & so pass through.
     text = escXml(text);
 
-    // 4. Wikilinks (non-image): [[target|alias]] or [[target]]
-    //    Targets/aliases are already escaped from step 3.
+    // 5. Wikilinks (non-image): [[target|alias]] or [[target]]
     text = text.replace(
       /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
       (_, target, alias) => alias ?? target
     );
 
-    // 5. Inline formatting — patterns don't conflict with XML entities.
+    // 6. Inline formatting.
     text = text.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
     text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     text = text.replace(/__(.+?)__/g, '<strong>$1</strong>');
@@ -248,13 +373,13 @@ function makeInline(imageMap: Record<string, string>) {
     text = text.replace(/~~(.+?)~~/g, '<del>$1</del>');
     text = text.replace(/==(.+?)==/g, '<mark>$1</mark>');
 
-    // 6. Links — URL is already &amp;-escaped from step 3, correct for href.
+    // 7. Links — URL already &amp;-escaped from step 4, correct for href.
     text = text.replace(
       /(?<!!)(\[([^\]]+)\])\(([^)]+)\)/g,
       (_, _full, label, href) => `<a href="${href}">${label}</a>`
     );
 
-    // 7. Restore stashed XML.
+    // 8. Restore stashed XML.
     text = text.replace(/\x00(\d+)\x00/g, (_, idx) => stash[Number(idx)]);
 
     return text;
