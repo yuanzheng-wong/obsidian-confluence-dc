@@ -170,7 +170,20 @@ export class ConfluenceSidebarView extends ItemView {
 
     // Unlink
     const unlink = root.createDiv({ cls: 'cf-actions cf-unlink' });
-    this.addActionButton(unlink, 'Unlink from Confluence', '', () => this.plugin.unlinkFile(file.path));
+    const unlinkBtn = unlink.createEl('button', { text: 'Unlink from Confluence' });
+    unlinkBtn.addEventListener('click', async () => {
+      if (!window.confirm(
+        `Remove Confluence config from "${file.basename}" and clear its sync history?\n\nThis cannot be undone.`
+      )) return;
+      unlinkBtn.disabled = true;
+      unlinkBtn.setText('Unlinking…');
+      try {
+        await this.plugin.unlinkFile(file.path);
+      } catch (e) {
+        unlinkBtn.disabled = false;
+        unlinkBtn.setText('Unlink from Confluence');
+      }
+    });
   }
 
   // --- Vault tab ---
