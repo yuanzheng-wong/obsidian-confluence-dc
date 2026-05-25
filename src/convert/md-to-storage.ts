@@ -382,7 +382,7 @@ function makeInline(imageMap: Record<string, string>) {
     );
 
     // 8. Restore stashed XML.
-    text = text.replace(/(\d+)/g, (_, idx) => stash[Number(idx)] ?? '');
+    text = text.replace(/(\d+)/g, (_, idx) => stash[Number(idx)] ?? '');
 
     return text;
   };
