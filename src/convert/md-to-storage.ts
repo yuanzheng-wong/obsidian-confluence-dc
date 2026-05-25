@@ -139,7 +139,8 @@ export function mdToStorage(markdown: string, imageMap: Record<string, string> =
     }
   }
 
-  return blocks.join('\n');
+  // Strip any null bytes that leaked through (invalid in XHTML).
+  return blocks.join('\n').replace(/\x00/g, '');
 }
 
 function codeBlock(lang: string, code: string): string {
@@ -323,9 +324,10 @@ function escAttr(s: string): string {
 function makeInline(imageMap: Record<string, string>) {
   return function inline(text: string): string {
     const stash: string[] = [];
+    // Use Unicode private-use chars as delimiters — valid XHTML, never appear in markdown.
     const stashXml = (xml: string) => {
       const idx = stash.push(xml) - 1;
-      return `\x00${idx}\x00`;
+      return `${idx}`;
     };
 
     // 1. Stash images — valid XML, must not be escaped below.
@@ -380,7 +382,7 @@ function makeInline(imageMap: Record<string, string>) {
     );
 
     // 8. Restore stashed XML.
-    text = text.replace(/\x00(\d+)\x00/g, (_, idx) => stash[Number(idx)]);
+    text = text.replace(/(\d+)/g, (_, idx) => stash[Number(idx)] ?? '');
 
     return text;
   };
