@@ -256,51 +256,91 @@ export default class ConfluencePlugin extends Plugin {
     }
   }
 
+  private gatherAllTrackedPaths(): string[] {
+    const paths = new Set<string>();
+    for (const filePath of Object.keys(this.stateManager.all())) {
+      paths.add(filePath);
+    }
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const fm = readConfluenceFrontmatter(this.app, file);
+      if (fm.spaceKey) paths.add(file.path);
+    }
+    return Array.from(paths);
+  }
+
   async pushAll(): Promise<void> {
     let pushed = 0;
     let failed = 0;
+
+    // Frontmatter-configured files
+    for (const filePath of this.gatherAllTrackedPaths()) {
+      const mapping = this.findMapping(filePath);
+      if (!mapping) continue;
+      try {
+        await pushFile(filePath, mapping, this.app.vault, this.client(), this.stateManager);
+        pushed++;
+      } catch {
+        failed++;
+      }
+    }
+
+    // Legacy global mappings (folder-level or unmapped files)
     for (const mapping of this.settings.mappings) {
       const files = await resolveFiles(mapping, this.app.vault);
       for (const filePath of files) {
+        const fm = readConfluenceFrontmatter(
+          this.app,
+          this.app.vault.getAbstractFileByPath(filePath) as import('obsidian').TFile
+        );
+        if (fm.spaceKey) continue; // already handled above
         try {
-          await pushFile(
-            filePath,
-            mapping,
-            this.app.vault,
-            this.client(),
-            this.stateManager
-          );
+          await pushFile(filePath, mapping, this.app.vault, this.client(), this.stateManager);
           pushed++;
         } catch {
           failed++;
         }
       }
     }
+
     new Notice(`Push all: ${pushed} pushed, ${failed} failed/conflicted`);
   }
 
   async pullAll(): Promise<void> {
     let pulled = 0;
     let failed = 0;
+
+    // Frontmatter-configured files (only those with a known pageId)
+    for (const filePath of this.gatherAllTrackedPaths()) {
+      if (!this.stateManager.get(filePath)) continue;
+      const mapping = this.findMapping(filePath);
+      if (!mapping) continue;
+      try {
+        await pullFile(filePath, mapping, this.app.vault, this.client(), this.stateManager, this.settings);
+        pulled++;
+      } catch {
+        failed++;
+      }
+    }
+
+    // Legacy global mappings
     for (const mapping of this.settings.mappings) {
       const files = await resolveFiles(mapping, this.app.vault);
       for (const filePath of files) {
         if (!this.stateManager.get(filePath)) continue;
+        const fm = readConfluenceFrontmatter(
+          this.app,
+          this.app.vault.getAbstractFileByPath(filePath) as import('obsidian').TFile
+        );
+        if (fm.spaceKey) continue; // already handled above
         try {
-          await pullFile(
-            filePath,
-            mapping,
-            this.app.vault,
-            this.client(),
-            this.stateManager,
-            this.settings
-          );
+          await pullFile(filePath, mapping, this.app.vault, this.client(), this.stateManager, this.settings);
           pulled++;
         } catch {
           failed++;
         }
       }
     }
+
     new Notice(`Pull all: ${pulled} pulled, ${failed} failed/conflicted`);
   }
 
