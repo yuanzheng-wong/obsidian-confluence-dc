@@ -69,6 +69,20 @@
 .cf-actions button {
   padding: 6px 16px;
 }
+.cf-unlink {
+  margin-top: 16px;
+  padding-top: 10px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.cf-unlink button {
+  font-size: 0.82em;
+  color: var(--text-muted);
+}
+.cf-page-link {
+  display: block;
+  font-size: 0.82em;
+  margin-top: 2px;
+}
 
 /* Vault tab */
 .cf-bulk {

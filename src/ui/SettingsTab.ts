@@ -34,6 +34,19 @@ export class ConfluenceSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName('Default space key')
+      .setDesc('Pre-filled when adding Confluence config to a new note.')
+      .addText((text) =>
+        text
+          .setPlaceholder('e.g. DOCS')
+          .setValue(this.plugin.settings.defaultSpaceKey)
+          .onChange(async (v) => {
+            this.plugin.settings.defaultSpaceKey = v.trim().toUpperCase();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
       .setName('Authentication type')
       .addDropdown((drop) =>
         drop

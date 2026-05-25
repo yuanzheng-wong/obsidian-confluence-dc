@@ -117,7 +117,7 @@ export class ConfluenceSidebarView extends ItemView {
 
     if (!hasConfig) {
       this.addActionButton(root, 'Add Confluence config', 'mod-cta', async () => {
-        await scaffoldConfluenceFrontmatter(this.app, file);
+        await scaffoldConfluenceFrontmatter(this.app, file, this.plugin.settings.defaultSpaceKey);
         // metadataCache 'changed' event will trigger refresh once the write lands
       });
       return;
@@ -142,14 +142,10 @@ export class ConfluenceSidebarView extends ItemView {
       const pageId = fm.pageId ?? record!.pageId;
       const row = form.createDiv({ cls: 'cf-field-row' });
       row.createEl('span', { cls: 'cf-label', text: 'Page ID' });
-      if (record?.pageUrl) {
-        row.createEl('a', { cls: 'cf-value-link', text: pageId, href: record.pageUrl });
-      } else {
-        row.createEl('span', { cls: 'cf-value-muted', text: pageId });
-      }
+      row.createEl('span', { cls: 'cf-value-muted', text: pageId });
     }
 
-    // Status
+    // Status + page link
     const statusEl = root.createDiv({ cls: 'cf-status' });
     if (!fm.spaceKey && !record) {
       statusEl.setText('Not configured');
@@ -158,6 +154,9 @@ export class ConfluenceSidebarView extends ItemView {
     } else {
       const d = new Date(record.lastSynced);
       statusEl.setText(`Synced ${d.toLocaleDateString()} ${d.toLocaleTimeString()}`);
+      if (record.pageUrl) {
+        statusEl.createEl('a', { text: ' Open in Confluence ↗', href: record.pageUrl, cls: 'cf-page-link' });
+      }
     }
 
     // Actions
@@ -168,6 +167,10 @@ export class ConfluenceSidebarView extends ItemView {
       this.addActionButton(actions, 'Push', 'mod-cta', () => this.plugin.pushFile(file.path), errorBox);
       this.addActionButton(actions, 'Pull', '', () => this.plugin.pullFile(file.path), errorBox);
     }
+
+    // Unlink
+    const unlink = root.createDiv({ cls: 'cf-actions cf-unlink' });
+    this.addActionButton(unlink, 'Unlink from Confluence', '', () => this.plugin.unlinkFile(file.path));
   }
 
   // --- Vault tab ---

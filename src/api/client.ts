@@ -61,9 +61,13 @@ export class ConfluenceClient {
           res.on('data', (chunk: Buffer) => chunks.push(chunk));
           res.on('end', () => {
             const buf = Buffer.concat(chunks);
-            if ((res.statusCode ?? 0) >= 400) {
+            const status = res.statusCode ?? 0;
+            if (status >= 400) {
+              if (status === 401 || status === 403) {
+                return reject(new Error(`Authentication failed (${status}) — check credentials in Settings`));
+              }
               return reject(
-                new Error(`Confluence ${method} ${parsed.pathname} → ${res.statusCode}: ${buf.toString('utf8').slice(0, 300)}`)
+                new Error(`Confluence ${method} ${parsed.pathname} → ${status}: ${buf.toString('utf8').slice(0, 300)}`)
               );
             }
             resolve(buf);

@@ -46,12 +46,12 @@ export async function writeConfluenceFrontmatter(
 }
 
 /** Write placeholder keys so the user can fill them in. */
-export async function scaffoldConfluenceFrontmatter(app: App, file: TFile): Promise<void> {
+export async function scaffoldConfluenceFrontmatter(app: App, file: TFile, defaultSpaceKey = ''): Promise<void> {
   // processFrontMatter strips null/empty values so nothing gets written.
   // Write directly so the keys land on disk as `key: ` (empty but present).
   await app.vault.process(file, (content) => {
     if (content.includes('confluence-space-key:')) return content;
-    const block = 'confluence-space-key: \nconfluence-parent-id: \nconfluence-title: \n';
+    const block = `confluence-space-key: ${defaultSpaceKey}\nconfluence-parent-id: \nconfluence-title: \n`;
     if (content.startsWith('---\n')) {
       return content.replace(/^---\n/, `---\n${block}`);
     }

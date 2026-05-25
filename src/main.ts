@@ -366,6 +366,18 @@ export default class ConfluencePlugin extends Plugin {
     }
   }
 
+  async unlinkFile(filePath: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(filePath);
+    if (!(file instanceof TFile)) return;
+    await writeConfluenceFrontmatter(this.app, file, {
+      spaceKey: undefined,
+      parentId: undefined,
+      pageId: undefined,
+      titleOverride: undefined,
+    });
+    await this.stateManager.remove(filePath);
+  }
+
   async importFrontmatterFromState(): Promise<void> {
     const records = this.stateManager.all();
     let imported = 0;
@@ -384,13 +396,13 @@ export default class ConfluencePlugin extends Plugin {
   }
 
   private openStatusModal(): void {
-    new StatusModal(
-      this.app,
-      this.settings.mappings,
-      this.client(),
-      this.stateManager,
-      this.settings
-    ).open();
+    const allMappings = [...this.settings.mappings];
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const fm = readConfluenceFrontmatter(this.app, file);
+      const mapping = frontmatterToMapping(fm, file.path);
+      if (mapping) allMappings.push(mapping);
+    }
+    new StatusModal(this.app, allMappings, this.client(), this.stateManager, this.settings).open();
   }
 
   private addMapping(localPath: string): void {

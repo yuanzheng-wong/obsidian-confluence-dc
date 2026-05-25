@@ -17,6 +17,7 @@ export interface ConfluenceSettings {
   password: string;
   pat: string;
   attachmentsFolder: string;
+  defaultSpaceKey: string;
   mappings: FileMapping[];
 }
 
@@ -29,5 +30,6 @@ export const DEFAULT_SETTINGS: ConfluenceSettings = {
   password: '',
   pat: '',
   attachmentsFolder: 'Attachments',
+  defaultSpaceKey: '',
   mappings: [],
 };
