@@ -152,9 +152,37 @@ export class ConfluenceSettingTab extends PluginSettingTab {
       })
     );
 
+    // --- Jira ---
+    containerEl.createEl('h3', { text: 'Jira Integration' });
+
+    new Setting(containerEl)
+      .setName('Jira server name')
+      .setDesc('Application link name as configured in Confluence (used in [JIRA:KEY] macros).')
+      .addText((text) =>
+        text
+          .setPlaceholder('quectel-ticket')
+          .setValue(this.plugin.settings.jiraServer)
+          .onChange(async (v) => {
+            this.plugin.settings.jiraServer = v.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Jira server ID')
+      .setDesc('UUID of the Jira application link (found in Confluence Admin → Application Links).')
+      .addText((text) =>
+        text
+          .setPlaceholder('xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx')
+          .setValue(this.plugin.settings.jiraServerId)
+          .onChange(async (v) => {
+            this.plugin.settings.jiraServerId = v.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
     // --- Attachments ---
     containerEl.createEl('h3', { text: 'Attachments' });
-
     new Setting(containerEl)
       .setName('Attachments folder')
       .setDesc('Vault-relative folder where pulled images are saved. Must already exist.')

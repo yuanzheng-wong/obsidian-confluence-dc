@@ -4,14 +4,28 @@ export interface MdToStorageResult {
   mermaidSources: string[];
 }
 
-export function mdToStorage(markdown: string, imageMap: Record<string, string> = {}): MdToStorageResult {
+export interface JiraParams {
+  server: string;
+  serverId: string;
+}
+
+export function mdToStorage(
+  markdown: string,
+  imageMap: Record<string, string> = {},
+  jiraParams?: JiraParams
+): MdToStorageResult {
   const mermaidSources: string[] = [];
-  const storage = convert(markdown, imageMap, mermaidSources);
+  const storage = convert(markdown, imageMap, mermaidSources, jiraParams);
   return { storage, mermaidSources };
 }
 
-function convert(markdown: string, imageMap: Record<string, string>, mermaidSources: string[]): string {
-  const inline = makeInline(imageMap);
+function convert(
+  markdown: string,
+  imageMap: Record<string, string>,
+  mermaidSources: string[],
+  jiraParams?: JiraParams
+): string {
+  const inline = makeInline(imageMap, jiraParams);
 
   // Strip YAML frontmatter
   let content = markdown.replace(/^---\n[\s\S]*?\n---\n?/, '').trimStart();
@@ -67,7 +81,7 @@ function convert(markdown: string, imageMap: Record<string, string>, mermaidSour
         quoteLines.push(lines[i].replace(/^>\s?/, ''));
         i++;
       }
-      blocks.push(blockquote(quoteLines, imageMap, mermaidSources));
+      blocks.push(blockquote(quoteLines, imageMap, mermaidSources, jiraParams));
       continue;
     }
 
@@ -195,7 +209,7 @@ const CALLOUT_MACRO: Record<string, string> = {
   example:   'note',
 };
 
-function blockquote(quoteLines: string[], imageMap: Record<string, string>, mermaidSources: string[]): string {
+function blockquote(quoteLines: string[], imageMap: Record<string, string>, mermaidSources: string[], jiraParams?: JiraParams): string {
   // Obsidian callout: first line is [!TYPE] optional title
   const calloutMatch = quoteLines[0]?.match(/^\[!(\w+)\][\s-]*(.*)/i);
   if (calloutMatch) {
@@ -204,7 +218,7 @@ function blockquote(quoteLines: string[], imageMap: Record<string, string>, merm
     const macro = CALLOUT_MACRO[type] ?? 'info';
     const bodyLines = quoteLines.slice(1);
     const body = bodyLines.length
-      ? convert(bodyLines.join('\n'), imageMap, mermaidSources)
+      ? convert(bodyLines.join('\n'), imageMap, mermaidSources, jiraParams)
       : '';
     const titleParam = title
       ? `<ac:parameter ac:name="title">${escXml(title)}</ac:parameter>`
@@ -218,7 +232,7 @@ function blockquote(quoteLines: string[], imageMap: Record<string, string>, merm
   }
 
   // Plain blockquote
-  const inner = convert(quoteLines.join('\n'), imageMap, mermaidSources);
+  const inner = convert(quoteLines.join('\n'), imageMap, mermaidSources, jiraParams);
   return (
     `<ac:structured-macro ac:name="info">` +
     `<ac:rich-text-body>${inner}</ac:rich-text-body>` +
@@ -337,7 +351,7 @@ function escAttr(s: string): string {
   return escXml(s).replace(/"/g, '&quot;');
 }
 
-function makeInline(imageMap: Record<string, string>) {
+function makeInline(imageMap: Record<string, string>, jiraParams?: JiraParams) {
   return function inline(text: string): string {
     const stash: string[] = [];
     // Use Unicode private-use chars as delimiters — valid XHTML, never appear in markdown.
@@ -368,21 +382,35 @@ function makeInline(imageMap: Record<string, string>) {
       stashXml(`<em>${escXml(alias ?? target.replace(/\.md$/, ''))}</em>`)
     );
 
-    // 3. Stash inline code with escaped content.
+    // 3. Stash Jira ticket references [JIRA:PROJ-123] → Jira macro.
+    if (jiraParams) {
+      const { server, serverId } = jiraParams;
+      text = text.replace(/\[JIRA:([A-Z][A-Z0-9_]*-\d+)\]/g, (_, key) =>
+        stashXml(
+          `<ac:structured-macro ac:name="jira" ac:schema-version="1">` +
+          `<ac:parameter ac:name="server">${escXml(server)}</ac:parameter>` +
+          `<ac:parameter ac:name="serverId">${escXml(serverId)}</ac:parameter>` +
+          `<ac:parameter ac:name="key">${escXml(key)}</ac:parameter>` +
+          `</ac:structured-macro>`
+        )
+      );
+    }
+
+    // 4. Stash inline code with escaped content.
     text = text.replace(/`([^`]+)`/g, (_, code) =>
       stashXml(`<code>${escXml(code)}</code>`)
     );
 
-    // 4. Escape raw text — stash placeholders contain no < > & so pass through.
+    // 5. Escape raw text — stash placeholders contain no < > & so pass through.
     text = escXml(text);
 
-    // 5. Wikilinks (non-image): [[target|alias]] or [[target]]
+    // 6. Wikilinks (non-image): [[target|alias]] or [[target]]
     text = text.replace(
       /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
       (_, target, alias) => alias ?? target
     );
 
-    // 6. Inline formatting.
+    // 7. Inline formatting.
     text = text.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
     text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     text = text.replace(/__(.+?)__/g, '<strong>$1</strong>');
@@ -391,13 +419,13 @@ function makeInline(imageMap: Record<string, string>) {
     text = text.replace(/~~(.+?)~~/g, '<del>$1</del>');
     text = text.replace(/==(.+?)==/g, '<mark>$1</mark>');
 
-    // 7. Links — URL already &amp;-escaped from step 4, correct for href.
+    // 8. Links — URL already &amp;-escaped from step 5, correct for href.
     text = text.replace(
       /(?<!!)(\[([^\]]+)\])\(([^)]+)\)/g,
       (_, _full, label, href) => `<a href="${href}">${label}</a>`
     );
 
-    // 8. Restore stashed XML.
+    // 9. Restore stashed XML.
     text = text.replace(/(\d+)/g, (_, idx) => stash[Number(idx)] ?? '');
 
     return text;

@@ -2,7 +2,7 @@ import { App, TFile, Vault } from 'obsidian';
 import { ConfluenceClient } from '../api/client';
 import { ConfluencePage } from '../api/types';
 import { mdToStorage } from '../convert/md-to-storage';
-import { FileMapping } from '../settings';
+import { ConfluenceSettings, FileMapping } from '../settings';
 import { FileSyncRecord, StateManager, hashContent } from './state';
 import { findLocalImages, buildImageMap, pushAttachments, pushMermaidDiagrams } from './attachments';
 import { stripFrontmatter } from './frontmatter';
@@ -29,7 +29,8 @@ export async function pushFile(
   client: ConfluenceClient,
   stateManager: StateManager,
   force: 'local' | 'remote' | 'none' = 'none',
-  onProgress?: (msg: string) => void | Promise<void>
+  onProgress?: (msg: string) => void | Promise<void>,
+  settings?: ConfluenceSettings
 ): Promise<ConfluencePage> {
   const file = vault.getAbstractFileByPath(filePath);
   if (!(file instanceof TFile)) throw new Error(`Not a file: ${filePath}`);
@@ -44,7 +45,10 @@ export async function pushFile(
   await onProgress?.('Converting markdown…');
   const images = findLocalImages(body, vault, filePath);
   const imageMap = buildImageMap(images);
-  const { storage: rawStorage, mermaidSources } = mdToStorage(body, imageMap);
+  const jiraParams = settings?.jiraServer && settings?.jiraServerId
+    ? { server: settings.jiraServer, serverId: settings.jiraServerId }
+    : undefined;
+  const { storage: rawStorage, mermaidSources } = mdToStorage(body, imageMap, jiraParams);
 
   // Replace <!--MERMAID:N--> sentinels with ac:image references.
   // SVGs are uploaded after the page upsert (Confluence resolves by filename at render time).

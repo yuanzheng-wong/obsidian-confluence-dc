@@ -121,6 +121,11 @@ function walkMacro(el: Element): string {
       return `\`\`\`\n${body}\n\`\`\`\n\n`;
     }
 
+    case 'jira': {
+      const key = el.querySelector('ac\\:parameter[ac\\:name="key"]')?.textContent?.trim() ?? '';
+      return key ? `[JIRA:${key}]` : '';
+    }
+
     default: {
       const rich = el.querySelector('ac\\:rich-text-body');
       return rich ? walkNodes(rich.childNodes) : '';

@@ -19,6 +19,8 @@ export interface ConfluenceSettings {
   attachmentsFolder: string;
   defaultSpaceKey: string;
   mappings: FileMapping[];
+  jiraServer: string;
+  jiraServerId: string;
 }
 
 export const DEFAULT_SETTINGS: ConfluenceSettings = {
@@ -32,4 +34,6 @@ export const DEFAULT_SETTINGS: ConfluenceSettings = {
   attachmentsFolder: 'Attachments',
   defaultSpaceKey: '',
   mappings: [],
+  jiraServer: '',
+  jiraServerId: '',
 };

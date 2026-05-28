@@ -159,7 +159,8 @@ export default class ConfluencePlugin extends Plugin {
         this.client(),
         this.stateManager,
         'none',
-        onProgress
+        onProgress,
+        this.settings
       );
       progress.finish(`Pushed → ${page.title}`);
       await this.writeFrontmatterPageId(filePath, page.id);
@@ -183,7 +184,8 @@ export default class ConfluencePlugin extends Plugin {
             this.client(),
             this.stateManager,
             'local',
-            onP2
+            onP2,
+            this.settings
           );
           p2.finish(`Pushed (local wins): ${filePath}`);
         } else if (resolution === 'remote') {
@@ -249,7 +251,9 @@ export default class ConfluencePlugin extends Plugin {
             this.app,
             this.client(),
             this.stateManager,
-            'local'
+            'local',
+            undefined,
+            this.settings
           );
           new Notice(`Pushed (local wins): ${filePath}`);
         }
@@ -280,7 +284,7 @@ export default class ConfluencePlugin extends Plugin {
       const mapping = this.findMapping(filePath);
       if (!mapping) continue;
       try {
-        await pushFile(filePath, mapping, this.app.vault, this.app, this.client(), this.stateManager);
+        await pushFile(filePath, mapping, this.app.vault, this.app, this.client(), this.stateManager, 'none', undefined, this.settings);
         pushed++;
       } catch {
         failed++;
@@ -297,7 +301,7 @@ export default class ConfluencePlugin extends Plugin {
         );
         if (fm.spaceKey) continue; // already handled above
         try {
-          await pushFile(filePath, mapping, this.app.vault, this.app, this.client(), this.stateManager);
+          await pushFile(filePath, mapping, this.app.vault, this.app, this.client(), this.stateManager, 'none', undefined, this.settings);
           pushed++;
         } catch {
           failed++;
