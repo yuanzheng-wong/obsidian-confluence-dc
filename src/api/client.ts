@@ -133,9 +133,35 @@ export class ConfluenceClient {
     );
   }
 
-  // Upload or replace an attachment on a page
+  // Upload or replace an attachment on a page.
+  // Tries POST (create) first; on 400 "same file name" falls back to POST /{id}/data (update).
   async uploadAttachment(
     pageId: string,
+    filename: string,
+    data: Buffer,
+    mimeType: string
+  ): Promise<ConfluenceAttachment> {
+    try {
+      return await this._postAttachment(
+        `${this.baseUrl}/rest/api/content/${pageId}/child/attachment`,
+        filename, data, mimeType
+      );
+    } catch (e) {
+      if ((e as Error).message.includes('same file name')) {
+        const existing = (await this.getAttachments(pageId)).find(a => a.title === filename);
+        if (existing) {
+          return await this._postAttachment(
+            `${this.baseUrl}/rest/api/content/${pageId}/child/attachment/${existing.id}/data`,
+            filename, data, mimeType
+          );
+        }
+      }
+      throw e;
+    }
+  }
+
+  private async _postAttachment(
+    url: string,
     filename: string,
     data: Buffer,
     mimeType: string
@@ -147,17 +173,11 @@ export class ConfluenceClient {
       `Content-Disposition: form-data; name="file"; filename="${filename}"${nl}` +
       `Content-Type: ${mimeType}${nl}${nl}`
     );
-    const footer = Buffer.from(`${nl}--${boundary}--${nl}`);
-    const body = Buffer.concat([header, data, footer]);
-
-    const result = await this.rawRequest(
-      'POST',
-      `${this.baseUrl}/rest/api/content/${pageId}/child/attachment`,
-      body,
-      `multipart/form-data; boundary=${boundary}`
-    );
-    const parsed = JSON.parse(result.toString('utf8')) as ConfluenceAttachmentList;
-    return parsed.results[0];
+    const body = Buffer.concat([header, data, Buffer.from(`${nl}--${boundary}--${nl}`)]);
+    const result = await this.rawRequest('POST', url, body, `multipart/form-data; boundary=${boundary}`);
+    const parsed = JSON.parse(result.toString('utf8'));
+    // Create endpoint returns { results: [...] }; update endpoint returns the attachment directly.
+    return (parsed.results?.[0] ?? parsed) as ConfluenceAttachment;
   }
 
   async getAttachments(pageId: string): Promise<ConfluenceAttachment[]> {

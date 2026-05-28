@@ -7,6 +7,7 @@ export interface AttachmentRecord {
   localHash: string;      // hash of local file at last sync
   remoteVersion: number;  // Confluence attachment version at last sync
   mimeType: string;
+  mermaidSource?: string; // set for mermaid-diagram-N.svg attachments; used on pull to reconstruct code block
 }
 
 export interface FileSyncRecord {

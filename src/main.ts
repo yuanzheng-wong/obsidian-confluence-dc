@@ -155,6 +155,7 @@ export default class ConfluencePlugin extends Plugin {
         filePath,
         mapping,
         this.app.vault,
+        this.app,
         this.client(),
         this.stateManager,
         'none',
@@ -178,6 +179,7 @@ export default class ConfluencePlugin extends Plugin {
             filePath,
             mapping,
             this.app.vault,
+            this.app,
             this.client(),
             this.stateManager,
             'local',
@@ -244,6 +246,7 @@ export default class ConfluencePlugin extends Plugin {
             filePath,
             mapping,
             this.app.vault,
+            this.app,
             this.client(),
             this.stateManager,
             'local'
@@ -277,7 +280,7 @@ export default class ConfluencePlugin extends Plugin {
       const mapping = this.findMapping(filePath);
       if (!mapping) continue;
       try {
-        await pushFile(filePath, mapping, this.app.vault, this.client(), this.stateManager);
+        await pushFile(filePath, mapping, this.app.vault, this.app, this.client(), this.stateManager);
         pushed++;
       } catch {
         failed++;
@@ -294,7 +297,7 @@ export default class ConfluencePlugin extends Plugin {
         );
         if (fm.spaceKey) continue; // already handled above
         try {
-          await pushFile(filePath, mapping, this.app.vault, this.client(), this.stateManager);
+          await pushFile(filePath, mapping, this.app.vault, this.app, this.client(), this.stateManager);
           pushed++;
         } catch {
           failed++;

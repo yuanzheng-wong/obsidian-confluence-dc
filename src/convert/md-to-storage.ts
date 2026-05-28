@@ -1,5 +1,16 @@
 // imageMap: maps markdown image ref (inside ![[]] or src of ![](local)) → Confluence attachment filename
-export function mdToStorage(markdown: string, imageMap: Record<string, string> = {}): string {
+export interface MdToStorageResult {
+  storage: string;
+  mermaidSources: string[];
+}
+
+export function mdToStorage(markdown: string, imageMap: Record<string, string> = {}): MdToStorageResult {
+  const mermaidSources: string[] = [];
+  const storage = convert(markdown, imageMap, mermaidSources);
+  return { storage, mermaidSources };
+}
+
+function convert(markdown: string, imageMap: Record<string, string>, mermaidSources: string[]): string {
   const inline = makeInline(imageMap);
 
   // Strip YAML frontmatter
@@ -12,7 +23,7 @@ export function mdToStorage(markdown: string, imageMap: Record<string, string> =
   while (i < lines.length) {
     const line = lines[i];
 
-    // Fenced code block
+    // Fenced code block (includes mermaid diagrams)
     const fenceMatch = line.match(/^(`{3,}|~{3,})(.*)/);
     if (fenceMatch) {
       const fence = fenceMatch[1];
@@ -23,7 +34,12 @@ export function mdToStorage(markdown: string, imageMap: Record<string, string> =
         codeLines.push(lines[i]);
         i++;
       }
-      blocks.push(codeBlock(lang, codeLines.join('\n')));
+      if (lang.toLowerCase() === 'mermaid') {
+        const idx = mermaidSources.push(codeLines.join('\n')) - 1;
+        blocks.push(`<!--MERMAID:${idx}-->`);
+      } else {
+        blocks.push(codeBlock(lang, codeLines.join('\n')));
+      }
       i++;
       continue;
     }
@@ -51,7 +67,7 @@ export function mdToStorage(markdown: string, imageMap: Record<string, string> =
         quoteLines.push(lines[i].replace(/^>\s?/, ''));
         i++;
       }
-      blocks.push(blockquote(quoteLines, imageMap));
+      blocks.push(blockquote(quoteLines, imageMap, mermaidSources));
       continue;
     }
 
@@ -179,7 +195,7 @@ const CALLOUT_MACRO: Record<string, string> = {
   example:   'note',
 };
 
-function blockquote(quoteLines: string[], imageMap: Record<string, string>): string {
+function blockquote(quoteLines: string[], imageMap: Record<string, string>, mermaidSources: string[]): string {
   // Obsidian callout: first line is [!TYPE] optional title
   const calloutMatch = quoteLines[0]?.match(/^\[!(\w+)\][\s-]*(.*)/i);
   if (calloutMatch) {
@@ -188,7 +204,7 @@ function blockquote(quoteLines: string[], imageMap: Record<string, string>): str
     const macro = CALLOUT_MACRO[type] ?? 'info';
     const bodyLines = quoteLines.slice(1);
     const body = bodyLines.length
-      ? mdToStorage(bodyLines.join('\n'), imageMap)
+      ? convert(bodyLines.join('\n'), imageMap, mermaidSources)
       : '';
     const titleParam = title
       ? `<ac:parameter ac:name="title">${escXml(title)}</ac:parameter>`
@@ -202,7 +218,7 @@ function blockquote(quoteLines: string[], imageMap: Record<string, string>): str
   }
 
   // Plain blockquote
-  const inner = mdToStorage(quoteLines.join('\n'), imageMap);
+  const inner = convert(quoteLines.join('\n'), imageMap, mermaidSources);
   return (
     `<ac:structured-macro ac:name="info">` +
     `<ac:rich-text-body>${inner}</ac:rich-text-body>` +

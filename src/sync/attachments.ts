@@ -1,4 +1,4 @@
-import { TFile, Vault } from 'obsidian';
+import { App, Component, MarkdownRenderer, TFile, Vault } from 'obsidian';
 import { ConfluenceClient } from '../api/client';
 import { AttachmentRecord } from './state';
 
@@ -102,7 +102,33 @@ export async function pullAttachments(
   for (const att of remoteList) {
     if (!isImage(att.title)) continue;
 
+    const isMermaid = att.title.startsWith('mermaid-diagram-') && att.title.endsWith('.svg');
     const prev = existing[att.title];
+
+    // For mermaid diagrams, always update the record so mermaidSource stays fresh,
+    // but skip re-downloading the SVG if the version hasn't changed.
+    if (isMermaid) {
+      const prev = existing[att.title];
+      if (prev && prev.remoteVersion >= att.version.number && prev.mermaidSource) {
+        // Version unchanged and source already known — nothing to do
+        updated[att.title] = prev;
+        continue;
+      }
+      // Download SVG to extract embedded mermaid source
+      const data = await client.downloadAttachment(att._links.download);
+      const mermaidSource = extractMermaidSource(data) ?? prev?.mermaidSource;
+      updated[att.title] = {
+        attachmentId: att.id,
+        filename: att.title,
+        localPath: '',
+        localHash: '',
+        remoteVersion: att.version.number,
+        mimeType: att.metadata.mediaType,
+        mermaidSource,
+      };
+      continue;
+    }
+
     if (prev && prev.remoteVersion >= att.version.number) continue;
 
     const data = await client.downloadAttachment(att._links.download);
@@ -162,4 +188,114 @@ function guessMime(filename: string): string {
 async function ensureFolder(vault: Vault, path: string): Promise<void> {
   if (vault.getAbstractFileByPath(path)) return;
   try { await vault.createFolder(path); } catch { /* already exists */ }
+}
+
+// ---------------------------------------------------------------------------
+// Mermaid diagram support
+// ---------------------------------------------------------------------------
+
+/**
+ * Render a Mermaid source string to SVG using Obsidian's built-in renderer.
+ * Must be called from the main thread (requires DOM access).
+ */
+export async function renderMermaidSvg(source: string, app: App): Promise<Buffer> {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const component = new Component();
+  component.load();
+  try {
+    await MarkdownRenderer.render(
+      app,
+      `\`\`\`mermaid\n${source}\n\`\`\``,
+      container,
+      '',
+      component
+    );
+    const svg = await new Promise<Element>((resolve, reject) => {
+      const existing = container.querySelector('svg');
+      if (existing) return resolve(existing);
+      const observer = new MutationObserver(() => {
+        const el = container.querySelector('svg');
+        if (el) { observer.disconnect(); resolve(el); }
+      });
+      observer.observe(container, { childList: true, subtree: true });
+      setTimeout(() => {
+        observer.disconnect();
+        reject(new Error('Mermaid render timeout — diagram may have a syntax error'));
+      }, 5000);
+    });
+    return Buffer.from(svg.outerHTML, 'utf8');
+  } finally {
+    component.unload();
+    document.body.removeChild(container);
+  }
+}
+
+/**
+ * Render, upload, and record mermaid diagrams for a page.
+ *
+ * - Each diagram is uploaded as `mermaid-diagram-N.svg` with the source stored
+ *   in the Confluence attachment comment field so pull can reconstruct the
+ *   original `\`\`\`mermaid` code block.
+ * - Skips re-upload when the rendered SVG hash is unchanged.
+ *
+ * Returns the updated attachment records and a sentinel→XML map for resolving
+ * `<!--MERMAID:N-->` placeholders in the storage body.
+ */
+export async function pushMermaidDiagrams(
+  pageId: string,
+  mermaidSources: string[],
+  client: ConfluenceClient,
+  existing: Record<string, AttachmentRecord>,
+  app: App,
+  onProgress?: (msg: string) => void | Promise<void>
+): Promise<{ attachments: Record<string, AttachmentRecord>; xmlMap: Record<string, string> }> {
+  const attachments: Record<string, AttachmentRecord> = {};
+  const xmlMap: Record<string, string> = {};
+
+  for (let idx = 0; idx < mermaidSources.length; idx++) {
+    const source = mermaidSources[idx];
+    const filename = `mermaid-diagram-${idx}.svg`;
+    const sentinel = `<!--MERMAID:${idx}-->`;
+
+    onProgress?.(`Rendering mermaid diagram ${idx + 1}/${mermaidSources.length}…`);
+    const svgData = await renderMermaidSvg(source, app);
+    const localHash = await hashBuffer(svgData.buffer as ArrayBuffer);
+
+    const prev = existing[filename];
+    if (!prev || prev.localHash !== localHash) {
+      onProgress?.(`Uploading mermaid diagram ${idx + 1}/${mermaidSources.length}…`);
+      const svgWithSource = embedMermaidSource(svgData, source);
+      const att = await client.uploadAttachment(pageId, filename, svgWithSource, 'image/svg+xml');
+      attachments[filename] = {
+        attachmentId: att.id,
+        filename,
+        localPath: '',
+        localHash,
+        remoteVersion: att.version?.number ?? 1,
+        mimeType: 'image/svg+xml',
+        mermaidSource: source,
+      };
+    } else {
+      attachments[filename] = prev;
+    }
+
+    xmlMap[sentinel] = `<ac:image><ri:attachment ri:filename="${filename}"/></ac:image>`;
+  }
+
+  return { attachments, xmlMap };
+}
+
+/** Embed mermaid source as an XML comment inside the SVG so it survives Confluence round-trips. */
+function embedMermaidSource(svg: Buffer, source: string): Buffer {
+  const str = svg.toString('utf8');
+  const insertAt = str.indexOf('>') + 1;
+  const comment = `\n<!-- mermaid-source\n${source}\n-->`;
+  return Buffer.from(str.slice(0, insertAt) + comment + str.slice(insertAt), 'utf8');
+}
+
+/** Extract mermaid source previously embedded by embedMermaidSource. */
+function extractMermaidSource(svg: Buffer): string | undefined {
+  const match = svg.toString('utf8').match(/<!-- mermaid-source\n([\s\S]*?)\n-->/);
+  return match?.[1];
 }

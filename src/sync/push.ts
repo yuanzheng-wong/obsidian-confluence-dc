@@ -1,10 +1,10 @@
-import { TFile, Vault } from 'obsidian';
+import { App, TFile, Vault } from 'obsidian';
 import { ConfluenceClient } from '../api/client';
 import { ConfluencePage } from '../api/types';
 import { mdToStorage } from '../convert/md-to-storage';
 import { FileMapping } from '../settings';
 import { FileSyncRecord, StateManager, hashContent } from './state';
-import { findLocalImages, buildImageMap, pushAttachments } from './attachments';
+import { findLocalImages, buildImageMap, pushAttachments, pushMermaidDiagrams } from './attachments';
 import { stripFrontmatter } from './frontmatter';
 
 export class ConflictError extends Error {
@@ -25,6 +25,7 @@ export async function pushFile(
   filePath: string,
   mapping: FileMapping,
   vault: Vault,
+  app: App,
   client: ConfluenceClient,
   stateManager: StateManager,
   force: 'local' | 'remote' | 'none' = 'none',
@@ -43,7 +44,11 @@ export async function pushFile(
   await onProgress?.('Converting markdown…');
   const images = findLocalImages(body, vault, filePath);
   const imageMap = buildImageMap(images);
-  const storageBody = mdToStorage(body, imageMap);
+  const { storage: rawStorage, mermaidSources } = mdToStorage(body, imageMap);
+
+  // Replace <!--MERMAID:N--> sentinels with ac:image references.
+  // SVGs are uploaded after the page upsert (Confluence resolves by filename at render time).
+  const storageBody = resolveMermaidSentinels(rawStorage, mermaidSources);
 
   if (record) {
     await onProgress?.('Checking remote page…');
@@ -67,6 +72,9 @@ export async function pushFile(
     const attachments = await pushAttachments(
       updated.id, images, vault, client, record.attachments ?? {}, onProgress
     );
+    const { attachments: mermaidAtts } = mermaidSources.length
+      ? await pushMermaidDiagrams(updated.id, mermaidSources, client, record.attachments ?? {}, app, onProgress)
+      : { attachments: {} };
 
     const newRemoteHash = await hashContent(updated.body?.storage?.value ?? storageBody);
     await stateManager.set(filePath, {
@@ -78,7 +86,7 @@ export async function pushFile(
       spaceKey: mapping.spaceKey,
       pageTitle: title,
       pageUrl: client.webUrl(updated),
-      attachments,
+      attachments: { ...attachments, ...mermaidAtts },
     });
 
     return updated;
@@ -108,6 +116,9 @@ export async function pushFile(
   }
 
   const attachments = await pushAttachments(page.id, images, vault, client, {}, onProgress);
+  const { attachments: mermaidAtts } = mermaidSources.length
+    ? await pushMermaidDiagrams(page.id, mermaidSources, client, {}, app, onProgress)
+    : { attachments: {} };
 
   const remoteHash = await hashContent(page.body?.storage?.value ?? storageBody);
   await stateManager.set(filePath, {
@@ -119,8 +130,19 @@ export async function pushFile(
     spaceKey: mapping.spaceKey,
     pageTitle: title,
     pageUrl: client.webUrl(page),
-    attachments,
+    attachments: { ...attachments, ...mermaidAtts },
   });
 
   return page;
+}
+
+function resolveMermaidSentinels(storage: string, mermaidSources: string[]): string {
+  let result = storage;
+  mermaidSources.forEach((_, idx) => {
+    result = result.replace(
+      `<!--MERMAID:${idx}-->`,
+      `<ac:image><ri:attachment ri:filename="mermaid-diagram-${idx}.svg"/></ac:image>`
+    );
+  });
+  return result;
 }

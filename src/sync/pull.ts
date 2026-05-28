@@ -48,7 +48,13 @@ export async function pullFile(
     return;
   }
 
-  const pulledBody = storageToMd(remotePage.body.storage.value);
+  // Build mermaid source map so storageToMd can reconstruct mermaid code blocks
+  const mermaidComments: Record<string, string> = {};
+  for (const rec of Object.values(attachments)) {
+    if (rec.mermaidSource) mermaidComments[rec.filename] = rec.mermaidSource;
+  }
+
+  const pulledBody = storageToMd(remotePage.body.storage.value, mermaidComments);
   const existingFm = extractFrontmatterBlock(localContent);
   const mdContent = existingFm ? existingFm + pulledBody : pulledBody;
 

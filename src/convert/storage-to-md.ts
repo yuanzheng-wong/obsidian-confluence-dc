@@ -1,4 +1,8 @@
-export function storageToMd(storage: string): string {
+// Populated by storageToMd before each parse; single-threaded so module-level state is safe.
+let _mermaidComments: Record<string, string> = {};
+
+export function storageToMd(storage: string, mermaidComments: Record<string, string> = {}): string {
+  _mermaidComments = mermaidComments;
   const parser = new DOMParser();
   // Wrap in a div so the root is a single element
   const doc = parser.parseFromString(
@@ -72,6 +76,10 @@ function walkNode(node: Node): string {
       const riAttach = el.querySelector('ri\\:attachment');
       if (riAttach) {
         const filename = riAttach.getAttribute('ri:filename') ?? '';
+        const mermaidSource = _mermaidComments[filename];
+        if (mermaidSource) {
+          return `\`\`\`mermaid\n${mermaidSource}\n\`\`\`\n\n`;
+        }
         return `![[${filename}]]`;
       }
       const riUrl = el.querySelector('ri\\:url');
