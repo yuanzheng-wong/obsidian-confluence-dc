@@ -20,11 +20,34 @@
 }
 
 /* File tab */
+.cf-file-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
 .cf-filename {
   font-weight: 600;
-  margin-bottom: 10px;
   font-size: 0.95em;
   color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cf-overflow-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.1em;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.cf-overflow-btn:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
 }
 .cf-form {
   display: flex;
@@ -66,17 +89,12 @@
   gap: 8px;
   margin-top: 4px;
 }
-.cf-actions button {
-  padding: 6px 16px;
+.cf-actions-main {
+  gap: 6px;
 }
-.cf-unlink {
-  margin-top: 16px;
-  padding-top: 10px;
-  border-top: 1px solid var(--background-modifier-border);
-}
-.cf-unlink button {
-  font-size: 0.82em;
-  color: var(--text-muted);
+.cf-btn-half {
+  flex: 1;
+  padding: 6px 0 !important;
 }
 .cf-page-link {
   display: block;

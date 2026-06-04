@@ -5,7 +5,7 @@ import { ConfluenceClient } from './api/client';
 import { initCredentials } from './api/credentials';
 import { StateManager } from './sync/state';
 import { pushFile, ConflictError } from './sync/push';
-import { pullFile } from './sync/pull';
+import { pullFile, pullNewPage } from './sync/pull';
 import { resolveFiles } from './sync/status';
 import {
   readConfluenceFrontmatter,
@@ -214,6 +214,18 @@ export default class ConfluencePlugin extends Plugin {
       new Notice(`No mapping for ${filePath}. Use "Map current file" first.`);
       throw new Error('No mapping');
     }
+    // No sync record yet but page ID is known — bootstrap from Confluence
+    if (!this.stateManager.get(filePath) && mapping.pageId) {
+      try {
+        await pullNewPage(filePath, mapping, this.app.vault, this.client(), this.stateManager, this.settings);
+        await this.writeFrontmatterPageId(filePath, mapping.pageId);
+        new Notice(`Pulled: ${filePath}`);
+      } catch (e) {
+        new Notice(`Pull failed: ${(e as Error).message}`);
+        throw e;
+      }
+      return;
+    }
     try {
       await pullFile(
         filePath,
@@ -260,6 +272,47 @@ export default class ConfluencePlugin extends Plugin {
       } else {
         throw e;
       }
+    }
+  }
+
+  async forcePushFile(filePath: string): Promise<void> {
+    const mapping = this.findMapping(filePath);
+    if (!mapping) throw new Error(`No mapping for ${filePath}`);
+    const progress = new ProgressNotice('Force pushing…');
+    await yieldToUI();
+    const onProgress = async (msg: string) => { progress.update(msg); await yieldToUI(); };
+    try {
+      const page = await pushFile(
+        filePath, mapping, this.app.vault, this.app,
+        this.client(), this.stateManager, 'local', onProgress, this.settings
+      );
+      progress.finish(`Force pushed → ${page.title}`);
+      await this.writeFrontmatterPageId(filePath, page.id);
+    } catch (e) {
+      progress.fail(`Force push failed: ${(e as Error).message}`);
+      throw e;
+    }
+  }
+
+  async forcePullFile(filePath: string): Promise<void> {
+    const mapping = this.findMapping(filePath);
+    if (!mapping) throw new Error(`No mapping for ${filePath}`);
+    const progress = new ProgressNotice('Force pulling…');
+    await yieldToUI();
+    try {
+      if (!this.stateManager.get(filePath) && mapping.pageId) {
+        await pullNewPage(filePath, mapping, this.app.vault, this.client(), this.stateManager, this.settings);
+        await this.writeFrontmatterPageId(filePath, mapping.pageId);
+      } else {
+        await pullFile(
+          filePath, mapping, this.app.vault,
+          this.client(), this.stateManager, this.settings, 'remote'
+        );
+      }
+      progress.finish(`Force pulled: ${filePath}`);
+    } catch (e) {
+      progress.fail(`Force pull failed: ${(e as Error).message}`);
+      throw e;
     }
   }
 

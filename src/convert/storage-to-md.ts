@@ -3,10 +3,15 @@ let _mermaidComments: Record<string, string> = {};
 
 export function storageToMd(storage: string, mermaidComments: Record<string, string> = {}): string {
   _mermaidComments = mermaidComments;
+  // HTML parser treats <![CDATA[...]]> as a bogus comment, making textContent empty.
+  // Unwrap each CDATA section to HTML-escaped text before parsing.
+  const processed = storage.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (_, content) =>
+    content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  );
   const parser = new DOMParser();
   // Wrap in a div so the root is a single element
   const doc = parser.parseFromString(
-    `<div>${storage}</div>`,
+    `<div>${processed}</div>`,
     'text/html'
   );
   const root = doc.body.firstElementChild;
@@ -36,7 +41,11 @@ function walkNode(node: Node): string {
     case 'h4': return `#### ${walkNodes(el.childNodes).trim()}\n\n`;
     case 'h5': return `##### ${walkNodes(el.childNodes).trim()}\n\n`;
     case 'h6': return `###### ${walkNodes(el.childNodes).trim()}\n\n`;
-    case 'p':  return `${walkNodes(el.childNodes).trim()}\n\n`;
+    case 'p': {
+      const text = walkNodes(el.childNodes).trim();
+      // Escape leading "N. " or "N) " so Markdown doesn't treat the paragraph as a list item
+      return text.replace(/^(\d+)([.)]) /, '$1\\$2 ') + '\n\n';
+    }
     case 'strong': return `**${walkNodes(el.childNodes)}**`;
     case 'b':      return `**${walkNodes(el.childNodes)}**`;
     case 'em':     return `*${walkNodes(el.childNodes)}*`;
@@ -64,6 +73,7 @@ function walkNode(node: Node): string {
 
     // Confluence macros
     case 'ac:structured-macro': return walkMacro(el);
+    case 'ac:task-list':        return walkTaskList(el);
     case 'ac:rich-text-body':   return walkNodes(el.childNodes);
     case 'ac:plain-text-body':  return el.textContent ?? '';
     case 'ac:link': {
@@ -110,10 +120,15 @@ function walkMacro(el: Element): string {
     case 'note':
     case 'tip':
     case 'warning': {
+      const MACRO_TO_CALLOUT: Record<string, string> = { note: 'NOTE', info: 'INFO', tip: 'TIP', warning: 'WARNING' };
+      const calloutType = MACRO_TO_CALLOUT[name ?? ''] ?? 'NOTE';
+      const title = el.querySelector('ac\\:parameter[ac\\:name="title"]')?.textContent?.trim() ?? '';
       const body = el.querySelector('ac\\:rich-text-body');
       if (!body) return '';
       const inner = walkNodes(body.childNodes).trim();
-      return inner.split('\n').map((l) => `> ${l}`).join('\n') + '\n\n';
+      const header = title ? `[!${calloutType}] ${title}` : `[!${calloutType}]`;
+      const bodyLines = inner ? inner.split('\n').map((l) => `> ${l}`).join('\n') : '';
+      return `> ${header}\n${bodyLines}\n\n`;
     }
 
     case 'noformat': {
@@ -131,6 +146,17 @@ function walkMacro(el: Element): string {
       return rich ? walkNodes(rich.childNodes) : '';
     }
   }
+}
+
+function walkTaskList(el: Element): string {
+  let result = '';
+  el.querySelectorAll('ac\\:task').forEach((task) => {
+    const status = task.querySelector('ac\\:task-status')?.textContent?.trim() ?? '';
+    const body = task.querySelector('ac\\:task-body')?.textContent?.trim() ?? '';
+    const checked = status === 'complete' ? 'x' : ' ';
+    result += `- [${checked}] ${body}\n`;
+  });
+  return result + '\n';
 }
 
 function walkList(el: Element, ordered: boolean): string {

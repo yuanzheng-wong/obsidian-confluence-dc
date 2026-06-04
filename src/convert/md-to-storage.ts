@@ -165,7 +165,9 @@ function convert(
           return l + ' ';
         })
         .join('');
-      blocks.push(`<p>${inline(joined)}</p>`);
+      // Unescape escaped list markers (e.g. "1\. " → "1. ") before pushing to Confluence
+      const body = joined.replace(/^(\d+)\\([.)]) /, '$1$2 ');
+      blocks.push(`<p>${inline(body)}</p>`);
     }
   }
 
@@ -360,7 +362,12 @@ function makeInline(imageMap: Record<string, string>, jiraParams?: JiraParams) {
       return `${idx}`;
     };
 
-    // 1. Stash images — valid XML, must not be escaped below.
+    // 1. Stash inline code first — protects its content from image/Jira/wikilink patterns below.
+    text = text.replace(/`([^`]+)`/g, (_, code) =>
+      stashXml(`<code>${escXml(code)}</code>`)
+    );
+
+    // 2. Stash images — valid XML, must not be escaped below.
     text = text.replace(/!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g, (_, ref) => {
       const filename = imageMap[ref.trim()];
       return stashXml(filename
@@ -377,12 +384,13 @@ function makeInline(imageMap: Record<string, string>, jiraParams?: JiraParams) {
         : '');
     });
 
-    // 2. Stash embedded notes ![[note.md]] (no image extension) — render as plain text link.
+    // 3. Stash embedded notes ![[note.md]] (no image extension) — render as plain text link.
     text = text.replace(/!\[\[([^\]|]+\.md)(?:\|([^\]]*))?\]\]/g, (_, target, alias) =>
       stashXml(`<em>${escXml(alias ?? target.replace(/\.md$/, ''))}</em>`)
     );
 
-    // 3. Stash Jira ticket references [JIRA:PROJ-123] → Jira macro.
+    // 4. Stash Jira ticket references [JIRA:PROJ-123] → Jira macro.
+    // (inline code is already stashed, so [JIRA:...] inside backticks won't match)
     if (jiraParams) {
       const { server, serverId } = jiraParams;
       text = text.replace(/\[JIRA:([A-Z][A-Z0-9_]*-\d+)\]/g, (_, key) =>
@@ -395,11 +403,6 @@ function makeInline(imageMap: Record<string, string>, jiraParams?: JiraParams) {
         )
       );
     }
-
-    // 4. Stash inline code with escaped content.
-    text = text.replace(/`([^`]+)`/g, (_, code) =>
-      stashXml(`<code>${escXml(code)}</code>`)
-    );
 
     // 5. Escape raw text — stash placeholders contain no < > & so pass through.
     text = escXml(text);

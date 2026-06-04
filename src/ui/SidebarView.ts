@@ -1,4 +1,4 @@
-import { ItemView, TFile, WorkspaceLeaf } from 'obsidian';
+import { ItemView, Menu, TFile, WorkspaceLeaf } from 'obsidian';
 import type ConfluencePlugin from '../main';
 import {
   readConfluenceFrontmatter,
@@ -109,11 +109,13 @@ export class ConfluenceSidebarView extends ItemView {
     const fm = readConfluenceFrontmatter(this.app, file);
     const record = this.plugin.stateManager.get(file.path);
 
-    root.createEl('div', { cls: 'cf-filename', text: file.basename });
-
     const cache = this.app.metadataCache.getFileCache(file);
     const rawFm = cache?.frontmatter ?? {};
     const hasConfig = 'confluence-space-key' in rawFm || 'confluence-parent-id' in rawFm;
+
+    // Header row: filename + overflow menu
+    const fileHeader = root.createDiv({ cls: 'cf-file-header' });
+    fileHeader.createEl('span', { cls: 'cf-filename', text: file.basename });
 
     if (!hasConfig) {
       this.addActionButton(root, 'Add Confluence config', 'mod-cta', async () => {
@@ -122,6 +124,49 @@ export class ConfluenceSidebarView extends ItemView {
       });
       return;
     }
+
+    const canSync = !!(fm.spaceKey && (fm.parentId || fm.pageId || record?.pageId));
+
+    // ⋮ overflow menu
+    const overflowBtn = fileHeader.createEl('button', { cls: 'cf-overflow-btn', text: '⋮' });
+    overflowBtn.addEventListener('click', (e) => {
+      const menu = new Menu();
+      if (canSync) {
+        menu.addItem(item => item
+          .setTitle('Force Push')
+          .setIcon('upload')
+          .onClick(() => {
+            if (!window.confirm(
+              `Force push will overwrite the Confluence page with your local version, ignoring any remote changes.\n\nContinue?`
+            )) return;
+            this.plugin.forcePushFile(file.path);
+          })
+        );
+        menu.addItem(item => item
+          .setTitle('Force Pull')
+          .setIcon('download')
+          .onClick(() => {
+            if (!window.confirm(
+              `Force pull will overwrite your local note with the Confluence version, ignoring any local changes.\n\nContinue?`
+            )) return;
+            this.plugin.forcePullFile(file.path);
+          })
+        );
+        menu.addSeparator();
+      }
+      menu.addItem(item => item
+        .setTitle('Unlink from Confluence')
+        .setIcon('unlink')
+        .onClick(async () => {
+          if (!window.confirm(
+            `Remove Confluence config from "${file.basename}" and clear its sync history?\n\nThis cannot be undone.`
+          )) return;
+          await this.plugin.unlinkFile(file.path);
+        })
+      );
+      const rect = overflowBtn.getBoundingClientRect();
+      menu.showAtPosition({ x: rect.left, y: rect.bottom });
+    });
 
     // Config fields
     const form = root.createDiv({ cls: 'cf-form' });
@@ -159,31 +204,13 @@ export class ConfluenceSidebarView extends ItemView {
       }
     }
 
-    // Actions
-    const canSync = !!(fm.spaceKey && (fm.parentId || fm.pageId || record?.pageId));
+    // Push / Pull — full width, half each
     if (canSync) {
-      const actions = root.createDiv({ cls: 'cf-actions' });
+      const actions = root.createDiv({ cls: 'cf-actions cf-actions-main' });
       const errorBox = root.createDiv({ cls: 'cf-error-box' });
-      this.addActionButton(actions, 'Push', 'mod-cta', () => this.plugin.pushFile(file.path), errorBox);
-      this.addActionButton(actions, 'Pull', '', () => this.plugin.pullFile(file.path), errorBox);
+      this.addActionButton(actions, 'Push', 'mod-cta cf-btn-half', () => this.plugin.pushFile(file.path), errorBox);
+      this.addActionButton(actions, 'Pull', 'cf-btn-half', () => this.plugin.pullFile(file.path), errorBox);
     }
-
-    // Unlink
-    const unlink = root.createDiv({ cls: 'cf-actions cf-unlink' });
-    const unlinkBtn = unlink.createEl('button', { text: 'Unlink from Confluence' });
-    unlinkBtn.addEventListener('click', async () => {
-      if (!window.confirm(
-        `Remove Confluence config from "${file.basename}" and clear its sync history?\n\nThis cannot be undone.`
-      )) return;
-      unlinkBtn.disabled = true;
-      unlinkBtn.setText('Unlinking…');
-      try {
-        await this.plugin.unlinkFile(file.path);
-      } catch (e) {
-        unlinkBtn.disabled = false;
-        unlinkBtn.setText('Unlink from Confluence');
-      }
-    });
   }
 
   // --- Vault tab ---
